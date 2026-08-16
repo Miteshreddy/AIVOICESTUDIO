@@ -1,0 +1,141 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 30 20% 99%;
+    --foreground: 20 22% 9%;
+    --card: 0 0% 100%;
+    --card-foreground: 20 22% 9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 20 22% 9%;
+    --primary: 32 95% 50%;
+    --primary-foreground: 20 45% 8%;
+    --secondary: 30 18% 95%;
+    --secondary-foreground: 22 15% 12%;
+    --muted: 30 15% 95%;
+    --muted-foreground: 25 9% 42%;
+    --accent: 189 75% 36%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --success: 152 60% 32%;
+    --success-foreground: 0 0% 100%;
+    --warning: 38 92% 42%;
+    --warning-foreground: 0 0% 100%;
+    --border: 30 16% 88%;
+    --input: 30 16% 88%;
+    --ring: 32 95% 50%;
+    --radius: 0.75rem;
+
+    --waveform-from: 36 96% 55%;
+    --waveform-to: 350 82% 58%;
+  }
+
+  .dark {
+    --background: 25 12% 6%;
+    --foreground: 30 18% 96%;
+    --card: 25 12% 9%;
+    --card-foreground: 30 18% 96%;
+    --popover: 25 12% 9%;
+    --popover-foreground: 30 18% 96%;
+    --primary: 36 96% 58%;
+    --primary-foreground: 25 45% 8%;
+    --secondary: 25 10% 14%;
+    --secondary-foreground: 30 15% 94%;
+    --muted: 25 9% 14%;
+    --muted-foreground: 28 8% 62%;
+    --accent: 189 80% 52%;
+    --accent-foreground: 25 45% 8%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 98%;
+    --success: 152 55% 45%;
+    --success-foreground: 25 45% 8%;
+    --warning: 38 92% 55%;
+    --warning-foreground: 25 45% 8%;
+    --border: 25 10% 17%;
+    --input: 25 10% 17%;
+    --ring: 36 96% 58%;
+
+    --waveform-from: 36 96% 58%;
+    --waveform-to: 350 85% 62%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html {
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: "Plus Jakarta Sans Variable", ui-sans-serif, system-ui, sans-serif;
+  }
+
+  h1,
+  h2,
+  h3 {
+    font-family: "Space Grotesk Variable", "Plus Jakarta Sans Variable", ui-sans-serif, sans-serif;
+    letter-spacing: -0.01em;
+  }
+
+  ::selection {
+    @apply bg-primary/30 text-foreground;
+  }
+
+  /* Custom scrollbar — thin, unobtrusive, matches the studio aesthetic */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-border;
+    border-radius: 999px;
+    border: 2px solid hsl(var(--background));
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-muted-foreground/40;
+  }
+}
+
+@layer utilities {
+  .text-gradient-brand {
+    @apply bg-clip-text text-transparent;
+    background-image: linear-gradient(
+      135deg,
+      hsl(var(--waveform-from)),
+      hsl(var(--waveform-to))
+    );
+  }
+
+  .bg-gradient-brand {
+    background-image: linear-gradient(
+      135deg,
+      hsl(var(--waveform-from)),
+      hsl(var(--waveform-to))
+    );
+  }
+
+  .bg-gradient-radial-glow {
+    background-image: radial-gradient(
+      circle at 50% 0%,
+      hsl(var(--primary) / 0.25),
+      transparent 60%
+    );
+  }
+
+  .glass {
+    @apply bg-card/60 backdrop-blur-xl backdrop-saturate-150;
+  }
+
+  .focus-ring {
+    @apply outline-none ring-offset-2 ring-offset-background transition-shadow focus-visible:ring-2 focus-visible:ring-ring;
+  }
+}
