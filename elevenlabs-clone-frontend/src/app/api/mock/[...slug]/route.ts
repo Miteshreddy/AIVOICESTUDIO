@@ -10,10 +10,10 @@ const execFileAsync = promisify(execFile);
 
 const services = {
   styletts2: {
-    voices: ["andreas", "woman"],
+    voices: ["andreas", "woman", "adam", "antoni", "josh"],
   },
   "seed-vc": {
-    voices: ["andreas", "woman", "trump"],
+    voices: ["andreas", "woman", "trump", "adam", "antoni", "josh"],
   },
   "make-an-audio": {
     voices: [],

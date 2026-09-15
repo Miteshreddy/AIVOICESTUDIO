@@ -10,6 +10,9 @@ VOICE_MAP = {
     "andreas": "en-US-AndrewNeural",
     "woman": "en-US-JennyNeural",
     "trump": "en-US-GuyNeural",
+    "adam": "en-US-ChristopherNeural",
+    "antoni": "en-US-BrianNeural",
+    "josh": "en-US-EricNeural",
 }
 
 def generate_wav_sine(output_path, duration=3.0, freq=440.0):
@@ -114,7 +117,14 @@ def convert_voice(source_path, voice_id, output_path):
                 audio = np.frombuffer(frames, dtype=np.int16).astype(np.float32)
 
             # Simple resample / pitch shift simulation
-            pitch_factors = {"andreas": 0.95, "woman": 1.25, "trump": 0.88}
+            pitch_factors = {
+                "andreas": 0.95,
+                "woman": 1.25,
+                "trump": 0.88,
+                "adam": 0.92,
+                "antoni": 1.0,
+                "josh": 1.05,
+            }
             factor = pitch_factors.get(voice_id.lower(), 1.0)
 
             # Pitch shift via linear interpolation
