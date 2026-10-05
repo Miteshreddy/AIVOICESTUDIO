@@ -1,7 +1,17 @@
+# Install torch first (GPU build):
+#   pip install torch==2.6.0 torchaudio==2.6.0 --index-url https://download.pytorch.org/whl/cu124
 fastapi>=0.115
 uvicorn[standard]>=0.32
 python-multipart>=0.0.9
 soundfile>=0.12
-chatterbox-tts
+librosa>=0.10
+pyloudnorm>=0.1.1
+scipy>=1.11
 noisereduce>=3.0
+pysbd>=0.3.4
+chatterbox-tts
+faster-whisper>=1.1
+diffusers==0.31.0  # 0.29 (chatterbox pin) breaks AudioLDM2; 0.31 works with both
+transformers==4.46.3
+accelerate
 datasets>=3.0

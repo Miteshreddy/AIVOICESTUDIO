@@ -4,78 +4,112 @@ from contextlib import asynccontextmanager
 
 import soundfile as sf
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from . import generation_store, voice_store
-from .audio_processing import Operation, ProcessRequest, apply_time_stretch, prepare_clone_reference, process_audio
+from . import generation_store, models, voice_store
+from .audio_processing import Operation, ProcessRequest, process_audio
+from .clone_builder import build_reference, decode_any
+from .text_normalize import load_pronunciations, save_pronunciations
 from .config import HOST, PORT
-from .tts_engine import analyze_audio, get_model_status, preload_model_in_background, synthesize
+from .tts_engine import (
+    VoiceSettings,
+    analyze_audio,
+    convert_voice,
+    generate_sound_effect,
+    synthesize,
+    to_wav_bytes,
+)
+
+PREVIEW_TEXT = (
+    "Hey there! It's really nice to meet you. I can read your stories, scripts and videos — "
+    "and honestly, I think we're going to make something great together."
+)
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    preload_model_in_background()
+    models.preload_in_background()
     yield
 
 
-app = FastAPI(title="Voice Studio AI — Local TTS Engine", lifespan=lifespan)
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+app = FastAPI(title="KAIZ Studio — Local Voice Engine", lifespan=lifespan)
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 
-def _measure_duration_seconds(audio_bytes: bytes) -> float:
+def _duration(audio_bytes: bytes) -> float:
     info = sf.info(io.BytesIO(audio_bytes))
     return round(info.frames / info.samplerate, 2) if info.samplerate else 0.0
 
 
+def _voice_or_404(voice_id: str) -> dict:
+    metadata = voice_store.get_voice_metadata(voice_id)
+    if not metadata:
+        raise HTTPException(status_code=404, detail="Voice not found")
+    return metadata
+
+
+# ── Health ────────────────────────────────────────────────────────────────────
+
+
 @app.get("/health")
 def health():
-    model = get_model_status()
-    return {"status": "ok", "modelLoaded": model["status"] == "ready", "model": model}
+    status = models.status()
+    tts = status["models"].get("tts", {"status": "idle"})
+    return {
+        "status": "ok",
+        "modelLoaded": tts.get("status") == "ready",
+        "model": {"status": tts.get("status"), "error": tts.get("error")},
+        **status,
+    }
+
+
+# ── Voices ────────────────────────────────────────────────────────────────────
 
 
 @app.post("/voices/clone")
 async def clone_voice(
     name: str = Form(...),
     description: str = Form(""),
-    file: UploadFile = File(...),
+    files: list[UploadFile] = File(...),
 ):
-    audio_bytes = await file.read()
+    payload = [(await f.read(), f.filename or "sample") for f in files]
     try:
-        analysis = analyze_audio(audio_bytes)
+        result = await run_in_threadpool(build_reference, payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=400, detail=f"Could not read audio file: {exc}") from exc
+        raise HTTPException(status_code=400, detail=f"Could not process audio: {exc}") from exc
 
-    if analysis["durationSeconds"] < 3:
-        raise HTTPException(status_code=400, detail="Reference sample must be at least 3 seconds long.")
-
-    try:
-        cleaned_bytes = prepare_clone_reference(audio_bytes, analysis["noiseLevel"])
-    except Exception:  # noqa: BLE001
-        cleaned_bytes = audio_bytes  # fall back to the raw upload rather than fail the clone
-
-    metadata = voice_store.create_voice(name, description, cleaned_bytes)
-    return {**metadata, "analysis": analysis}
+    metadata = voice_store.create_voice(
+        name,
+        description,
+        result["reference"],
+        tags=["cloned"],
+        extra={"transcript": result["transcript"][:2000], "qualityScore": result["qualityScore"]},
+    )
+    return {
+        **metadata,
+        "analysis": result["analysis"],
+        "qualityScore": result["qualityScore"],
+        "warnings": result["warnings"],
+        "speechSeconds": result["speechSeconds"],
+        "referenceSeconds": result["referenceSeconds"],
+    }
 
 
 @app.get("/voices")
 def list_voices():
-    return voice_store.list_voices()
+    from .tts_engine import adapter_path
+
+    return [{**v, "fineTuned": adapter_path(v["id"]) is not None} for v in voice_store.list_voices()]
 
 
 @app.get("/voices/{voice_id}")
 def get_voice(voice_id: str):
-    metadata = voice_store.get_voice_metadata(voice_id)
-    if not metadata:
-        raise HTTPException(status_code=404, detail="Voice not found")
-    return metadata
+    return _voice_or_404(voice_id)
 
 
 class VoiceUpdateRequest(BaseModel):
@@ -94,23 +128,19 @@ def update_voice(voice_id: str, request: VoiceUpdateRequest):
 
 
 @app.get("/voices/{voice_id}/reference")
-def get_voice_reference(voice_id: str):
-    metadata = voice_store.get_voice_metadata(voice_id)
-    path = voice_store.get_reference_path(voice_id)
-    if not metadata or not path:
-        raise HTTPException(status_code=404, detail="Voice not found")
-
-    speed = metadata.get("speed", 1.0)
-    if speed == 1.0:
-        return FileResponse(path, media_type="audio/wav", filename=f"{voice_id}-reference.wav")
-
-    # Preview should sound like what generation actually produces for this voice.
-    audio_bytes = apply_time_stretch(path.read_bytes(), speed)
-    return Response(
-        content=audio_bytes,
-        media_type="audio/wav",
-        headers={"Content-Disposition": f'inline; filename="{voice_id}-reference.wav"'},
-    )
+async def get_voice_reference(voice_id: str):
+    """Preview for a voice: a short sample spoken by the actual engine (with the
+    human layer), so "Listen" sounds exactly like what Generate will produce.
+    Synthesised once, then cached."""
+    _voice_or_404(voice_id)
+    preview = voice_store.get_preview_path(voice_id)
+    if not preview.exists():
+        path = voice_store.get_reference_path(voice_id)
+        if not path:
+            raise HTTPException(status_code=404, detail="Voice has no reference audio")
+        audio = await run_in_threadpool(synthesize, PREVIEW_TEXT, str(path), VoiceSettings(seed=11))
+        preview.write_bytes(audio)
+    return FileResponse(preview, media_type="audio/wav")
 
 
 @app.delete("/voices/{voice_id}")
@@ -122,66 +152,146 @@ def remove_voice(voice_id: str):
 
 @app.post("/analyze")
 async def analyze(file: UploadFile = File(...)):
-    audio_bytes = await file.read()
+    raw = await file.read()
     try:
-        return analyze_audio(audio_bytes)
+        audio, sr = decode_any(raw, file.filename or "")
+        return analyze_audio(to_wav_bytes(audio, sr))
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=400, detail=f"Could not read audio file: {exc}") from exc
 
 
+# ── Text to speech ───────────────────────────────────────────────────────────
+
+
 class TtsRequest(BaseModel):
-    text: str
-    voiceId: str | None = None
-    # Chatterbox's own defaults (0.5 / 0.5 / 0.8) bias toward variety over clarity —
-    # higher temperature in particular means more sampling randomness, which reads as
-    # mushier articulation. These defaults trade a little expressiveness for
-    # noticeably crisper, more consistent pronunciation.
-    exaggeration: float = 0.45
-    cfgWeight: float = 0.6
-    temperature: float = 0.6
+    text: str = Field(min_length=1, max_length=20_000)
+    voiceId: str
+    stability: float = Field(0.5, ge=0, le=1)
+    speed: float | None = Field(None, ge=0.5, le=2.0)
+    seed: int | None = None
+    takes: int = Field(2, ge=1, le=3)
+    pitchSemitones: float = Field(0.0, ge=-4, le=4)
+    brightness: float = Field(0.0, ge=-1, le=1)
+    warmth: float = Field(0.0, ge=-1, le=1)
 
 
 @app.post("/tts")
-def generate_speech(request: TtsRequest):
+async def generate_speech(request: TtsRequest):
     if not request.text.strip():
         raise HTTPException(status_code=400, detail="text must not be empty")
 
-    reference_path = None
-    speed = 1.0
-    if request.voiceId:
-        metadata = voice_store.get_voice_metadata(request.voiceId)
-        if not metadata:
-            raise HTTPException(status_code=404, detail="Voice not found")
-        path = voice_store.get_reference_path(request.voiceId)
-        if not path:
-            raise HTTPException(status_code=404, detail="Voice not found")
-        reference_path = str(path)
-        speed = metadata.get("speed", 1.0)
+    meta = _voice_or_404(request.voiceId)
+    path = voice_store.get_reference_path(request.voiceId)
+    if not path:
+        raise HTTPException(status_code=404, detail="Voice reference audio missing")
 
+    settings = VoiceSettings(
+        stability=request.stability,
+        speed=request.speed if request.speed is not None else meta.get("speed", 1.0),
+        seed=request.seed,
+        target_wpm=float(meta.get("paceWpm", 168)),
+        takes=request.takes,
+        pitch_semitones=request.pitchSemitones,
+        brightness=request.brightness,
+        warmth=request.warmth,
+    )
     try:
-        audio_bytes = synthesize(
-            request.text,
-            reference_path,
-            exaggeration=request.exaggeration,
-            cfg_weight=request.cfgWeight,
-            temperature=request.temperature,
-        )
-        if speed != 1.0:
-            audio_bytes = apply_time_stretch(audio_bytes, speed)
+        audio = await run_in_threadpool(synthesize, request.text, str(path), settings)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"Synthesis failed: {exc}") from exc
 
-    voice_name = "Default voice"
-    if request.voiceId:
-        voice_store.increment_generation_count(request.voiceId)
-        voice_meta = voice_store.get_voice_metadata(request.voiceId)
-        if voice_meta:
-            voice_name = voice_meta["name"]
+    voice_store.increment_generation_count(request.voiceId)
+    generation_store.create_generation(request.voiceId, meta["name"], request.text, _duration(audio), audio)
+    return Response(content=audio, media_type="audio/wav")
 
-    duration_seconds = _measure_duration_seconds(audio_bytes)
-    generation_store.create_generation(request.voiceId, voice_name, request.text, duration_seconds, audio_bytes)
 
-    return Response(content=audio_bytes, media_type="audio/wav")
+# ── Pronunciation dictionary ─────────────────────────────────────────────────
+
+
+@app.get("/pronunciations")
+def get_pronunciations():
+    return load_pronunciations()
+
+
+@app.put("/pronunciations")
+def put_pronunciations(entries: dict[str, str]):
+    save_pronunciations(entries)
+    return load_pronunciations()
+
+
+# ── Voice changer (speech-to-speech) ─────────────────────────────────────────
+
+
+@app.post("/voice-changer")
+async def voice_changer(voiceId: str = Form(...), file: UploadFile = File(...), removeNoise: bool = Form(False)):
+    meta = _voice_or_404(voiceId)
+    target = voice_store.get_reference_path(voiceId)
+    if not target or not target.exists():
+        raise HTTPException(status_code=404, detail="Voice reference audio missing")
+
+    raw = await file.read()
+    try:
+        audio, sr = decode_any(raw, file.filename or "")
+        if removeNoise:
+            from .audio_processing import apply_noise_reduction
+
+            audio = apply_noise_reduction(audio, sr, 70)
+        result = await run_in_threadpool(convert_voice, to_wav_bytes(audio, sr), str(target))
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"Voice conversion failed: {exc}") from exc
+
+    generation_store.create_generation(voiceId, meta["name"], "[Voice changer]", _duration(result), result)
+    return Response(content=result, media_type="audio/wav")
+
+
+# ── Sound effects ─────────────────────────────────────────────────────────────
+
+
+class SfxRequest(BaseModel):
+    prompt: str = Field(min_length=2, max_length=500)
+    durationSeconds: float = Field(5.0, ge=1, le=30)
+    promptInfluence: float = Field(0.5, ge=0, le=1)
+    seed: int | None = None
+    quality: str = "standard"  # draft | standard | high
+
+
+@app.post("/sound-effects")
+async def sound_effects(request: SfxRequest):
+    steps = {"draft": 50, "standard": 100, "high": 200}.get(request.quality, 100)
+    guidance = 2.0 + request.promptInfluence * 5.0
+    try:
+        audio = await run_in_threadpool(
+            generate_sound_effect, request.prompt, request.durationSeconds, steps, guidance, request.seed
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"Sound effect generation failed: {exc}") from exc
+    generation_store.create_generation(None, "Sound effect", request.prompt, _duration(audio), audio)
+    return Response(content=audio, media_type="audio/wav")
+
+
+# ── Speech to text ────────────────────────────────────────────────────────────
+
+
+@app.post("/transcribe")
+async def transcribe(file: UploadFile = File(...), language: str | None = Form(None)):
+    raw = await file.read()
+
+    def run():
+        import librosa
+
+        audio, sr = decode_any(raw, file.filename or "")
+        audio = librosa.resample(audio, orig_sr=sr, target_sr=16000)
+        segments, info = models.whisper().transcribe(audio, language=language, vad_filter=True)
+        segs = [{"start": round(s.start, 2), "end": round(s.end, 2), "text": s.text.strip()} for s in segments]
+        return {"language": info.language, "text": " ".join(s["text"] for s in segs), "segments": segs}
+
+    try:
+        return await run_in_threadpool(run)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"Transcription failed: {exc}") from exc
+
+
+# ── Generation history ───────────────────────────────────────────────────────
 
 
 @app.get("/generations")
@@ -217,6 +327,9 @@ def remove_generation(generation_id: str):
     return {"deleted": generation_id}
 
 
+# ── Audio cleanup ─────────────────────────────────────────────────────────────
+
+
 class OperationModel(BaseModel):
     enabled: bool = False
     amount: float = 50.0
@@ -241,7 +354,7 @@ async def process_audio_endpoint(file: UploadFile = File(...), operations: str =
     except (json.JSONDecodeError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=f"Invalid operations payload: {exc}") from exc
 
-    audio_bytes = await file.read()
+    raw = await file.read()
     request = ProcessRequest(
         noise_removal=Operation(**options.noiseRemoval.model_dump()),
         echo_removal=Operation(**options.echoRemoval.model_dump()),
@@ -253,12 +366,11 @@ async def process_audio_endpoint(file: UploadFile = File(...), operations: str =
         limiter=Operation(**options.limiter.model_dump()),
         eq_preset=options.eqPreset,
     )
-
     try:
-        processed = process_audio(audio_bytes, request)
+        audio, sr = decode_any(raw, file.filename or "")
+        processed = await run_in_threadpool(process_audio, to_wav_bytes(audio, sr), request)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"Audio processing failed: {exc}") from exc
-
     return Response(content=processed, media_type="audio/wav")
 
 

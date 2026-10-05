@@ -1,61 +1,42 @@
-# Voice Studio AI
+# KAIZ Studio
 
-A complete AI voice creation, editing, cloning, and production platform — built to feel like Figma, Cursor, ElevenLabs, Adobe Audition, and CapCut combined.
+A private, fully local alternative to ElevenLabs. Everything runs on your own
+NVIDIA GPU: no accounts, no API keys, no per-character billing, and nothing
+leaves your machine.
 
-Voice generation and cloning run **entirely locally** on your own GPU via [Chatterbox TTS](https://github.com/resemble-ai/chatterbox) (MIT licensed) — no ElevenLabs/OpenAI account or API key required to clone a voice and generate speech.
+| | |
+|---|---|
+| **Speech** | Type or paste up to 20,000 characters and pick a voice. Adjust stability, emotion and speed, then generate (Ctrl + Enter). |
+| **Voices** | Six featured voices, each picked by audition from dozens of real human speakers. Plus **voice cloning** from an upload or a mic recording. |
+| **Voice Changer** | Keep your words, timing and emotion, and swap the voice. |
+| **Sound Effects** | Describe any sound and generate it. |
+| **History** | Everything you've generated, searchable, with replay, download and "open in editor". |
+
+## Run it
+
+Double-click **`Start Voice Studio AI.bat`**. It starts three services and opens
+http://localhost:5173:
+
+- `ml-service/`: the Python voice engine (port 8095)
+- `server/`: the Express API (port 8787)
+- `client/`: the React app (port 5173)
+
+The first launch takes about a minute while the voice model loads.
+
+## Setup on a new machine
+
+1. Install the voice engine. See [`ml-service/README.md`](ml-service/README.md).
+2. Run `npm install` in the repo root.
+3. Build the voice library once:
+   ```bat
+   cd ml-service
+   G:\KAIZ_AI\venv\Scripts\python -m app.library --presets-only
+   G:\KAIZ_AI\venv\Scripts\python -m app.curate_voices
+   ```
+   The voice engine must be running for `curate_voices`. It auditions real
+   speakers and keeps the most natural three female and three male voices.
 
 ## Stack
 
-| Layer | Tech |
-|---|---|
-| Frontend | React, Vite, TypeScript, Tailwind CSS, Framer Motion, shadcn/ui, React Router, React Query, Zustand |
-| Backend | Node.js, Express |
-| Voice engine | Python, FastAPI, [Chatterbox TTS](https://github.com/resemble-ai/chatterbox) — self-hosted, GPU-accelerated |
-| Database / Auth / Storage | Supabase (optional — see below) |
-| Optional AI | OpenAI/Groq (text rewrite tools), Deepgram (transcription), ElevenLabs (alternate cloud TTS provider) |
-| Deployment | Vercel (client), Railway (server) |
-
-## Structure
-
-This is an npm-workspaces monorepo plus one Python service:
-
-- `client/` — React app, feature-based architecture (`src/features/*`)
-- `server/` — Express API layer; proxies the local TTS engine and any optional cloud AI providers
-- `ml-service/` — Python FastAPI service running Chatterbox TTS locally
-
-See `client/src/` subfolders for the full frontend architecture breakdown, and [`ml-service/README.md`](ml-service/README.md) for the voice engine.
-
-## Getting started
-
-```bash
-# 1. Voice engine (needs an NVIDIA GPU with CUDA for reasonable speed)
-cd ml-service
-python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements.txt
-pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu124 --force-reinstall  # GPU build
-python -m app.main                 # http://localhost:8095 — first run downloads model weights (~5GB)
-
-# 2. App (from repo root, separate terminal)
-npm install
-cp .env.example .env
-npm run dev                        # client on http://localhost:5173
-npm run dev:server                 # API on http://localhost:8787
-```
-
-Without a Supabase project configured, the API runs in **local single-user mode** — no sign-in required, everything works against local storage. Add `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY` when you want real accounts, multi-user data, and persistence.
-
-### Database (optional)
-
-Apply the schema in [`supabase/migrations/0001_init.sql`](supabase/migrations/0001_init.sql) to your Supabase project (via `supabase db push` with the Supabase CLI, or by pasting it into the SQL editor). It creates `profiles`, `voices`, `projects`, `generations`, and `user_api_keys` tables with row-level security, plus `voice-samples` / `generated-audio` / `avatars` storage buckets.
-
-## Deployment
-
-The voice engine (`ml-service/`) needs a GPU host — Vercel/Railway won't run it. Options: keep it local and only deploy the client (point `VITE_API_BASE_URL` at a tunnel to your machine), rent a GPU box (RunPod/Lambda/etc.) and point `LOCAL_TTS_URL` at it, or switch `TTS_PROVIDER=elevenlabs` server-side to fall back to the cloud provider for production instead.
-
-- **Client → Vercel**: import the repo as-is. [`vercel.json`](vercel.json) at the repo root points Vercel at the `client` workspace (`npm run build --workspace=client`, output `client/dist`) and adds a SPA rewrite so client-side routes resolve correctly. Set `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, and `VITE_API_BASE_URL` as project env vars.
-- **Server → Railway**: import the repo, keep the service root directory at the repo root. [`railway.json`](railway.json) builds and starts the `server` workspace and health-checks `/health`. Set `LOCAL_TTS_URL` (or `TTS_PROVIDER=elevenlabs` + `ELEVENLABS_API_KEY`), `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `ENCRYPTION_KEY`, and `CORS_ORIGIN` as project env vars.
-
-## Status
-
-Built incrementally, feature by feature. See task list for current progress.
+React + Vite + Tailwind (client) · Express (API) · FastAPI + PyTorch (engine) ·
+Chatterbox TTS / VC, Kokoro, faster-whisper and AudioLDM 2 (models).

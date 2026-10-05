@@ -1,11 +1,18 @@
 import { apiClient } from "./api-client";
 
 export interface GenerateSpeechParams {
-  voiceId?: string;
+  voiceId: string;
   text: string;
-  exaggeration?: number;
-  cfgWeight?: number;
-  temperature?: number;
+  /** 0 = more natural variation, 1 = steadier and more consistent */
+  stability?: number;
+  /** 0.5 - 2.0 speaking-rate multiplier */
+  speed?: number;
+  /** takes per passage (best is kept) */
+  takes?: number;
+  pitchSemitones?: number;
+  brightness?: number;
+  warmth?: number;
+  seed?: number;
 }
 
 export async function generateSpeechAudio(params: GenerateSpeechParams): Promise<string> {
@@ -35,6 +42,9 @@ export interface ClonedVoice {
   createdAt: string;
   updatedAt: string;
   analysis: ClonedVoiceAnalysis;
+  qualityScore?: number;
+  warnings?: string[];
+  speechSeconds?: number;
 }
 
 export function analyzeVoiceSample(file: File) {
@@ -58,6 +68,10 @@ export interface RemoteVoiceSummary {
   tags: string[];
   gender: string | null;
   source: VoiceSource;
+  featured?: boolean;
+  /** Fine-tuned on ~1 h of the speaker ("Pro" voice). */
+  fineTuned?: boolean;
+  qualityScore?: number;
   generationCount: number;
   createdAt: string;
   updatedAt: string;
@@ -120,4 +134,34 @@ export function updateGeneration(generationId: string, fields: GenerationUpdateF
 
 export function deleteGeneration(generationId: string) {
   return apiClient.delete<{ deleted: string }>(`/api/generations/${generationId}`);
+}
+
+export interface SoundEffectParams {
+  prompt: string;
+  durationSeconds?: number;
+  promptInfluence?: number;
+  quality?: "draft" | "standard" | "high";
+  seed?: number;
+}
+
+export async function generateSoundEffect(params: SoundEffectParams): Promise<string> {
+  const blob = await apiClient.postBlob("/api/sound-effects/generate", params);
+  return URL.createObjectURL(blob);
+}
+
+export async function convertVoice(file: File | Blob, voiceId: string, removeNoise: boolean): Promise<string> {
+  const formData = new FormData();
+  formData.append("voiceId", voiceId);
+  formData.append("removeNoise", String(removeNoise));
+  formData.append("file", file, file instanceof File ? file.name : "recording.webm");
+  const blob = await apiClient.postFormBlob("/api/voice-changer/convert", formData);
+  return URL.createObjectURL(blob);
+}
+
+export function getPronunciations() {
+  return apiClient.get<Record<string, string>>("/api/pronunciations");
+}
+
+export function savePronunciations(entries: Record<string, string>) {
+  return apiClient.put<Record<string, string>>("/api/pronunciations", entries);
 }

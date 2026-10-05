@@ -139,3 +139,33 @@
     @apply outline-none ring-offset-2 ring-offset-background transition-shadow focus-visible:ring-2 focus-visible:ring-ring;
   }
 }
+
+/* ── Studio motion ───────────────────────────────────────────────────────── */
+@keyframes orb-speak {
+  0%, 100% { transform: scale(1); }
+  30% { transform: scale(1.08); }
+  60% { transform: scale(0.97); }
+}
+@keyframes orb-swirl {
+  to { transform: rotate(360deg); }
+}
+@keyframes rise-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+@layer utilities {
+  .animate-orb-speak { animation: orb-speak 1.1s ease-in-out infinite; }
+  .animate-orb-swirl { animation: orb-swirl 3s linear infinite; }
+  .animate-rise-in { animation: rise-in 0.35s ease-out both; }
+  .studio-surface {
+    @apply rounded-2xl border border-border/70 bg-card;
+  }
+  .ambient-glow {
+    background:
+      radial-gradient(60rem 30rem at 15% -10%, hsl(var(--waveform-from) / 0.10), transparent 60%),
+      radial-gradient(50rem 30rem at 110% 10%, hsl(var(--waveform-to) / 0.08), transparent 60%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-orb-speak, .animate-orb-swirl, .animate-rise-in { animation: none; }
+}

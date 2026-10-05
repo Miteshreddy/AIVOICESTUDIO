@@ -41,7 +41,6 @@ export default defineConfig({
             "@radix-ui/react-tooltip",
           ],
           "vendor-motion": ["framer-motion"],
-          "vendor-supabase": ["@supabase/supabase-js"],
           "vendor-query": ["@tanstack/react-query", "@tanstack/react-virtual"],
           "vendor-forms": ["react-hook-form", "@hookform/resolvers", "zod"],
         },

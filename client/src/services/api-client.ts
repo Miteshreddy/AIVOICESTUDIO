@@ -1,6 +1,6 @@
-import { supabase } from "@/lib/supabase";
-
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string) ?? "http://localhost:8787";
+
+const LONG_TIMEOUT_MS = 30 * 60_000;
 
 export class ApiError extends Error {
   constructor(
@@ -13,15 +13,9 @@ export class ApiError extends Error {
   }
 }
 
+// Single-user local app: no auth headers needed.
 async function authHeaders(): Promise<Headers> {
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  const headers = new Headers();
-  if (session?.access_token) {
-    headers.set("Authorization", `Bearer ${session.access_token}`);
-  }
-  return headers;
+  return new Headers();
 }
 
 async function throwIfNotOk(response: Response, path: string) {
@@ -97,18 +91,24 @@ async function requestBlob(path: string, init: RequestInit = {}, timeoutMs = 20_
 
 export const apiClient = {
   get: <T>(path: string) => request<T>(path, { method: "GET" }),
-  getBlob: (path: string) => requestBlob(path, { method: "GET" }, 30_000),
+  // Preset-voice previews are synthesised on first request.
+  getBlob: (path: string) => requestBlob(path, { method: "GET" }, 180_000),
   post: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: "POST", body: body ? JSON.stringify(body) : undefined }),
+  // Local GPU work (cloning analysis, long narration, first-run model downloads)
+  // can legitimately take many minutes — only give up after 30.
   postForm: <T>(path: string, formData: FormData) =>
-    request<T>(path, { method: "POST", body: formData }, 60_000),
-  // Generation can be genuinely slow on a cold model — 3 minutes covers first-run warmup.
+    request<T>(path, { method: "POST", body: formData }, LONG_TIMEOUT_MS),
   postBlob: (path: string, body?: unknown, formData?: FormData) =>
     requestBlob(
       path,
       { method: "POST", body: formData ?? (body ? JSON.stringify(body) : undefined) },
-      180_000,
+      LONG_TIMEOUT_MS,
     ),
+  postFormBlob: (path: string, formData: FormData) =>
+    requestBlob(path, { method: "POST", body: formData }, LONG_TIMEOUT_MS),
+  put: <T>(path: string, body?: unknown) =>
+    request<T>(path, { method: "PUT", body: body ? JSON.stringify(body) : undefined }),
   patch: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: "PATCH", body: body ? JSON.stringify(body) : undefined }),
   delete: <T>(path: string) => request<T>(path, { method: "DELETE" }),

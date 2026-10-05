@@ -36,9 +36,12 @@ voicesRouter.post("/clone", requireAuth, upload.array("files", 10), async (req, 
     const { name, description } = cloneMetaSchema.parse(req.body);
 
     if (env.TTS_PROVIDER === "local") {
-      // Chatterbox clones zero-shot from a single reference clip — use the longest sample provided.
-      const primary = files.reduce((a, b) => (b.size > a.size ? b : a));
-      const result = await cloneVoiceLocal(name, description, primary.buffer, primary.originalname);
+      // The engine transcribes every sample and assembles the cleanest speech into the reference.
+      const result = await cloneVoiceLocal(
+        name,
+        description,
+        files.map((f) => ({ buffer: f.buffer, filename: f.originalname })),
+      );
       return res.status(201).json(result);
     }
 
@@ -79,6 +82,7 @@ const updateSchema = z.object({
   name: z.string().min(1).max(100).optional(),
   description: z.string().max(500).optional(),
   tags: z.array(z.string().max(30)).max(20).optional(),
+  speed: z.number().min(0.5).max(2).optional(),
 });
 
 voicesRouter.patch("/:voiceId", requireAuth, async (req, res, next) => {
@@ -100,7 +104,7 @@ voicesRouter.get("/:voiceId/reference", requireAuth, async (req, res, next) => {
     }
     const audio = await getVoiceReferenceLocal(req.params.voiceId);
     res.setHeader("Content-Type", "audio/wav");
-    res.setHeader("Content-Disposition", `attachment; filename="${req.params.voiceId}-reference.wav"`);
+    res.setHeader("Content-Disposition", `inline; filename="${req.params.voiceId}-preview.wav"`);
     res.send(Buffer.from(audio));
   } catch (err) {
     next(err);

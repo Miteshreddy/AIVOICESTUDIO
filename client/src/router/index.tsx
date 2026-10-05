@@ -1,57 +1,46 @@
 import { lazy, Suspense } from "react";
 import { createBrowserRouter, Navigate, RouterProvider } from "react-router-dom";
+import { Loader2 } from "lucide-react";
 import { AppLayout } from "@/app/layout/AppLayout";
-import { AnimatedWaveform } from "@/components/shared/AnimatedWaveform";
 
-// Auth (LoginPage, SignupPage, ProtectedRoute) and the marketing HomePage are built and kept
-// in the codebase, but unrouted for now — this is a personal, single-user local build.
-// See client/src/features/auth and client/src/features/home to re-enable them later.
+const SpeechPage = lazy(() => import("@/features/speech/SpeechPage"));
+const VoicesPage = lazy(() => import("@/features/voices/VoicesPage"));
+const VoiceChangerPage = lazy(() => import("@/features/voice-changer/VoiceChangerPage"));
+const SoundEffectsPage = lazy(() => import("@/features/sound-effects/SoundEffectsPage"));
+const HistoryPage = lazy(() => import("@/features/history/HistoryPage"));
 
-const DashboardPage = lazy(() => import("@/features/dashboard/DashboardPage"));
-const VoiceStudioPage = lazy(() => import("@/features/voice-studio/VoiceStudioPage"));
-const ProjectsPage = lazy(() => import("@/features/projects/ProjectsPage"));
-const VoiceLibraryPage = lazy(() => import("@/features/voice-library/VoiceLibraryPage"));
-const VoiceClonePage = lazy(() => import("@/features/voice-clone/VoiceClonePage"));
-const GenerateSpeechPage = lazy(() => import("@/features/generate-speech/GenerateSpeechPage"));
-const AudioCleanupPage = lazy(() => import("@/features/audio-cleanup/AudioCleanupPage"));
-const AudioEditorPage = lazy(() => import("@/features/audio-editor/AudioEditorPage"));
-const SettingsPage = lazy(() => import("@/features/settings/SettingsPage"));
-const AccountPage = lazy(() => import("@/features/settings/AccountPage"));
-
-function PageFallback() {
+function page(element: React.ReactNode) {
   return (
-    <div className="flex h-full min-h-[60vh] items-center justify-center">
-      <AnimatedWaveform bars={16} className="h-8 opacity-60" />
-    </div>
+    <Suspense
+      fallback={
+        <div className="flex h-full min-h-[50vh] items-center justify-center">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        </div>
+      }
+    >
+      {element}
+    </Suspense>
   );
 }
 
-function withSuspense(element: React.ReactNode) {
-  return <Suspense fallback={<PageFallback />}>{element}</Suspense>;
-}
-
 const router = createBrowserRouter([
-  { path: "/", element: <Navigate to="/app/dashboard" replace /> },
   {
-    path: "/app",
+    path: "/",
     element: <AppLayout />,
     children: [
-      { index: true, element: withSuspense(<DashboardPage />) },
-      { path: "dashboard", element: withSuspense(<DashboardPage />) },
-      { path: "voice-studio", element: withSuspense(<VoiceStudioPage />) },
-      { path: "voice-studio/:voiceId", element: withSuspense(<VoiceStudioPage />) },
-      { path: "projects", element: withSuspense(<ProjectsPage />) },
-      { path: "voice-library", element: withSuspense(<VoiceLibraryPage />) },
-      { path: "voice-clone", element: withSuspense(<VoiceClonePage />) },
-      { path: "generate-speech", element: withSuspense(<GenerateSpeechPage />) },
-      { path: "audio-cleanup", element: withSuspense(<AudioCleanupPage />) },
-      { path: "audio-editor", element: withSuspense(<AudioEditorPage />) },
-      { path: "audio-editor/:projectId", element: withSuspense(<AudioEditorPage />) },
-      { path: "settings", element: withSuspense(<SettingsPage />) },
-      { path: "account", element: withSuspense(<AccountPage />) },
+      { index: true, element: page(<SpeechPage />) },
+      { path: "voices", element: page(<VoicesPage />) },
+      { path: "voice-changer", element: page(<VoiceChangerPage />) },
+      { path: "sound-effects", element: page(<SoundEffectsPage />) },
+      { path: "history", element: page(<HistoryPage />) },
+      // Old URLs from the previous layout.
+      { path: "app/voice-library", element: <Navigate to="/voices" replace /> },
+      { path: "app/voice-clone", element: <Navigate to="/voices?clone=1" replace /> },
+      { path: "app/voice-changer", element: <Navigate to="/voice-changer" replace /> },
+      { path: "app/sound-effects", element: <Navigate to="/sound-effects" replace /> },
+      { path: "*", element: <Navigate to="/" replace /> },
     ],
   },
-  { path: "*", element: <Navigate to="/app/dashboard" replace /> },
 ]);
 
 export function AppRouter() {

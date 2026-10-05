@@ -23,12 +23,14 @@ def create_voice(
     voice_id: Optional[str] = None,
     gender: Optional[str] = None,
     speed: float = 1.0,
+    extra: Optional[dict] = None,
 ) -> dict:
     voice_id = voice_id or str(uuid.uuid4())
     voice_dir = _voice_dir(voice_id)
     voice_dir.mkdir(parents=True, exist_ok=True)
 
-    (voice_dir / REFERENCE_FILENAME).write_bytes(reference_bytes)
+    if reference_bytes:
+        (voice_dir / REFERENCE_FILENAME).write_bytes(reference_bytes)
 
     metadata = {
         "id": voice_id,
@@ -45,6 +47,7 @@ def create_voice(
         "generationCount": 0,
         "createdAt": datetime.now(timezone.utc).isoformat(),
         "updatedAt": datetime.now(timezone.utc).isoformat(),
+        **(extra or {}),
     }
     (voice_dir / METADATA_FILENAME).write_text(json.dumps(metadata))
     return metadata
@@ -115,6 +118,13 @@ def delete_voice(voice_id: str) -> bool:
     if not voice_dir.exists():
         return False
     for child in voice_dir.iterdir():
-        child.unlink()
+        child.unlink()  # reference.wav, preview.wav, metadata.json
     voice_dir.rmdir()
     return True
+
+
+PREVIEW_FILENAME = "preview.wav"
+
+
+def get_preview_path(voice_id: str) -> Path:
+    return _voice_dir(voice_id) / PREVIEW_FILENAME

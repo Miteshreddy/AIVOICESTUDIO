@@ -2,7 +2,6 @@ import { create } from "zustand";
 import {
   deleteGeneration,
   downloadGenerationAudio,
-  generateSpeechAudio,
   listGenerations,
   updateGeneration,
   type GenerationRecord,
@@ -18,7 +17,6 @@ interface GenerationsState {
   archive: (id: string) => Promise<void>;
   unarchive: (id: string) => Promise<void>;
   remove: (id: string) => Promise<void>;
-  duplicate: (id: string) => Promise<void>;
   getAudioUrl: (id: string) => Promise<string>;
   seedAudioUrl: (id: string, url: string) => void;
 }
@@ -78,13 +76,6 @@ export const useGenerationsStore = create<GenerationsState>((set, get) => ({
     } catch {
       set({ generations: previous });
     }
-  },
-
-  duplicate: async (id) => {
-    const target = get().generations.find((g) => g.id === id);
-    if (!target) return;
-    await generateSpeechAudio({ voiceId: target.voiceId ?? undefined, text: target.text });
-    await get().refresh();
   },
 
   getAudioUrl: async (id) => {

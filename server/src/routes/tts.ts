@@ -9,17 +9,16 @@ import { generateSpeechLocal, listVoicesLocal } from "../services/local-tts.js";
 export const ttsRouter = Router();
 
 const generateSchema = z.object({
-  voiceId: z.string().optional(),
-  text: z.string().min(1).max(5_000),
-  // ElevenLabs-style controls (used when TTS_PROVIDER=elevenlabs)
+  voiceId: z.string().min(1),
+  text: z.string().min(1).max(20_000),
+  // 0 = more varied & expressive, 1 = steadier
   stability: z.number().min(0).max(1).optional(),
-  similarityBoost: z.number().min(0).max(1).optional(),
-  style: z.number().min(0).max(1).optional(),
   speed: z.number().min(0.5).max(2).optional(),
-  // Local Chatterbox-style controls (used when TTS_PROVIDER=local)
-  exaggeration: z.number().min(0).max(1).optional(),
-  cfgWeight: z.number().min(0).max(1).optional(),
-  temperature: z.number().min(0).max(2).optional(),
+  seed: z.number().int().optional(),
+  takes: z.number().int().min(1).max(3).optional(),
+  pitchSemitones: z.number().min(-4).max(4).optional(),
+  brightness: z.number().min(-1).max(1).optional(),
+  warmth: z.number().min(-1).max(1).optional(),
 });
 
 ttsRouter.post("/generate", requireAuth, validateBody(generateSchema), async (req, res, next) => {
@@ -29,10 +28,10 @@ ttsRouter.post("/generate", requireAuth, validateBody(generateSchema), async (re
     const audio =
       env.TTS_PROVIDER === "local"
         ? await generateSpeechLocal(body)
-        : await generateSpeech({ ...body, voiceId: body.voiceId! });
+        : await generateSpeech(body);
 
     res.setHeader("Content-Type", env.TTS_PROVIDER === "local" ? "audio/wav" : "audio/mpeg");
-    res.send(Buffer.from(audio));
+    res.send(Buffer.isBuffer(audio) ? audio : Buffer.from(new Uint8Array(audio)));
   } catch (err) {
     next(err);
   }

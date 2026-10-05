@@ -15,6 +15,9 @@ import { aiFeaturesRouter } from "./routes/ai-features.js";
 import { settingsRouter } from "./routes/settings.js";
 import { audioRouter } from "./routes/audio.js";
 import { generationsRouter } from "./routes/generations.js";
+import { soundEffectsRouter } from "./routes/sound-effects.js";
+import { voiceChangerRouter } from "./routes/voice-changer.js";
+import { pronunciationsRouter } from "./routes/pronunciations.js";
 
 const app = express();
 
@@ -39,6 +42,9 @@ app.use("/api/ai", aiFeaturesRouter);
 app.use("/api/settings", settingsRouter);
 app.use("/api/audio", audioRouter);
 app.use("/api/generations", generationsRouter);
+app.use("/api/sound-effects", soundEffectsRouter);
+app.use("/api/voice-changer", voiceChangerRouter);
+app.use("/api/pronunciations", pronunciationsRouter);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

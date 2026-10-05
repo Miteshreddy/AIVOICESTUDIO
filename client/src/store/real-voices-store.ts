@@ -10,6 +10,8 @@ import {
 interface RealVoicesState {
   voices: RemoteVoiceSummary[];
   loaded: boolean;
+  /** True when the last fetch failed (engine not up yet) — callers retry. */
+  failed: boolean;
   refresh: () => Promise<void>;
   addVoice: (voice: RemoteVoiceSummary) => void;
   removeVoice: (id: string) => Promise<void>;
@@ -19,13 +21,14 @@ interface RealVoicesState {
 export const useRealVoicesStore = create<RealVoicesState>((set, get) => ({
   voices: [],
   loaded: false,
+  failed: false,
 
   refresh: async () => {
     try {
       const voices = await listClonedVoices();
-      set({ voices, loaded: true });
+      set({ voices, loaded: true, failed: false });
     } catch {
-      set({ loaded: true });
+      set({ loaded: true, failed: true });
     }
   },
 
